@@ -1,0 +1,12 @@
+name: BigTechStockPrices
+title: BigTechStockPrices
+username: wenxuanlu
+account: wenxuanlu
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 10843502
+bundleId: 8080687
+url: https://wenxuanlu.shinyapps.io/BigTechStockPrices/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

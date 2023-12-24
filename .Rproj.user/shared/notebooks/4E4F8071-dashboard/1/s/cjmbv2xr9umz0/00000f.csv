@@ -1,0 +1,4 @@
+"0","# load the data set"
+"0","big_tech_stock_prices = as_tibble(readRDS(""./data/big_tech_stock_prices.rds"")) %>%"
+"0","  filter(date >= as.Date(""2012-07-01"") & date <= as.Date(""2022-12-31""))"
+"0","big_tech_companies = as_tibble(readRDS(""./data/big_tech_companies.rds""))"

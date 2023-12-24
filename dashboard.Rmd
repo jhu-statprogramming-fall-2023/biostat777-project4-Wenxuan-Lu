@@ -1,0 +1,872 @@
+---
+title: "Big Tech Stock Prices"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    source_code: embed
+runtime: shiny
+
+---
+
+```{r setup, include = FALSE}
+library(tidytuesdayR)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(zoo)
+library(DT)
+library(shiny)
+library(shinyjs)
+library(purrr)
+library(scales)
+# knitr::opts_chunk$set(fig.width = 5, fig.asp = 1/3)
+```
+
+```{r download data, message=FALSE, warning=FALSE, results='hide'}
+# create a data folder if needed
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+
+# download data from tidytuesday and save it if needed
+if (!file.exists("./data/big_tech_stock_prices.rds")) {
+  tuesdata <- tt_load('2023-02-07')
+  big_tech_stock_prices <- tuesdata$big_tech_stock_prices
+  big_tech_companies <- tuesdata$big_tech_companies
+  saveRDS(big_tech_stock_prices, "./data/big_tech_stock_prices.rds")
+  saveRDS(big_tech_companies, "./data/big_tech_companies.rds")
+}
+```
+
+```{r load data}
+# load the data set
+big_tech_stock_prices = as_tibble(readRDS("./data/big_tech_stock_prices.rds")) %>%
+  filter(date >= as.Date("2012-07-01") & date <= as.Date("2022-12-31"))
+big_tech_companies = as_tibble(readRDS("./data/big_tech_companies.rds"))
+```
+
+# About
+
+The tech industry has experienced unprecedented growth in the recent decade, revolutionizing the way we live and work. Moreover, the rapid advancements in technology has created compelling investment opportunities, attracting investors to seek additional income from the stock market.
+
+The Big Tech Stock Prices dashboard intends to provide a summary of the past stock performance for 14 big tech companies. It also enables the user to compare between the stocks and use the moving average indicator to further analyze the price trend.
+
+The data set is obtained from the package `tidytuesday` from week [2023-02-07](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-02-07/readme.md) and is originated from the Kaggle data set [Big Tech Stock Prices](https://www.kaggle.com/datasets/evangower/big-tech-stock-prices). Please see `The Data` tab for more details.
+
+Here is a demo video about how to use the dashboard:
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/4E6WZeJ5MI0?si=kQ6c3MP-DUOwjEJU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    
+
+
+
+# The Data
+
+The stock data for this dashboard is from the package `tidytuesday` from week [2023-02-07](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-02-07/readme.md) and is originated from the Kaggle data set [Big Tech Stock Prices](https://www.kaggle.com/datasets/evangower/big-tech-stock-prices). It contains the stock prices for 14 big tech companies from 2010/01 to 2023/01, and the data for different companies cover slightly different time ranges. To keep data consistent among companies, entries in the common range from 2012-07-01 to 2022-12-31 are used.
+
+The [data dictionary](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-02-07/readme.md) for the two files in the dataset is recreated below.
+
+```{r data dictionary, echo=FALSE}
+knitr::kable(tibble(variable=c("stock_symbol",
+                               "date",
+                               "open",
+                               "high", 
+                               "low",
+                               "close",
+                               "adj_close",
+                               "volume"),
+                    class = c("character",
+                              "double",
+                              "double",
+                              "double",
+                              "double",
+                              "double",
+                              "double",
+                              "double"),
+                    description = c("stock symbol",
+                                    "date",
+                                    "The price at market open.",
+                                    "The highest price for that day.",
+                                    "The lowest price for that day.",
+                                    "The price at market close, adjusted for splits.",
+                                    "The closing price after adjustments for all applicable splits and dividend distributions. Data is adjusted using appropriate split and dividend multipliers, adhering to Center for Research in Security Prices (CRSP) standards.",
+                                    "The number of shares trated on that day.")), 
+             "simple",
+             caption = "big_tech_stock_prices.csv")
+
+knitr::kable(tibble(variable=c("stock_symbol",
+                               "company"),
+                    class = c("character",
+                              "character"),
+                    description = c("stock symbol",
+                                    "Full name of the company.")), 
+             "simple",
+             caption = "big_tech_companies.csv")
+```
+
+Below is the stock data combined from the two raw files.
+
+```{r}
+df = inner_join(big_tech_stock_prices, big_tech_companies, by = join_by(stock_symbol)) %>%
+  select(stock_symbol, company, date, open, high, low, close, adj_close, volume)
+datatable(df, options=list(pageLength=20))
+
+# shinyApp(
+#   ui = fluidPage(
+#     DTOutput('tbl')
+#   ),
+#   server = function(input, output) {
+#     output$tbl = renderDT(
+#       df,
+#       options = list(pageLength = 20,
+#                      scrollY = "auto")
+#     )
+#   }
+# )
+```
+
+# Past Performance Summary
+Column {.tabset}
+-------------------------------------
+    
+### Price by year
+    
+```{r}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  group_by(year) %>%
+  summarise(mean_close = mean(close), mean_volume = mean(volume), .groups="drop") %>%
+  arrange(year)
+plot_df$x = seq(1, nrow(plot_df))
+
+ggplot(data=plot_df, aes(x=year, y=mean_close)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Stock Market Close Price for Big Tech Companies", 
+       subtitle = "The mean stock market close price for each year from 2012 to 2022",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year)",
+      y = "price (dollars per share)") + 
+  scale_x_continuous(breaks = plot_df$year, labels = plot_df$year) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=10),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+### Price by quarter
+
+```{r}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  mutate(month=month(date)) %>%
+  mutate(quarter=case_when(
+    month <= 3 ~ 1,
+    month <= 6 ~ 2,
+    month <= 9 ~ 3,
+    .default = 4
+  )) %>%
+  group_by(year, quarter) %>%
+  summarise(mean_close = mean(close), mean_volume = mean(volume), .groups="drop") %>%
+  mutate(year_qt = paste0(year, "/0", quarter)) %>%
+  arrange(year, quarter) %>%
+  mutate(year_qt = factor(year_qt, levels=year_qt))
+
+plot_df$x = seq(1, nrow(plot_df))
+
+ggplot(data=plot_df, aes(x=x, y=mean_close)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Stock Market Close Price for Big Tech Companies", 
+       subtitle = "The mean stock market close price for each quarter from 2012/03 to 2022/04",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "price (dollars per share)") + 
+  scale_x_continuous(breaks = seq(1, nrow(plot_df)), labels = plot_df$year_qt) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=10),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+   
+Column {.tabset}
+-------------------------------------
+   
+### Volume by year
+
+```{r}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  group_by(year) %>%
+  summarise(mean_close = mean(close), mean_volume = mean(volume), .groups="drop") %>%
+  arrange(year)
+plot_df$x = seq(1, nrow(plot_df))
+
+ggplot(data=plot_df, aes(x=year, y=mean_volume)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Daily Volume for Big Tech Companies", 
+       subtitle = "The mean daily volume each year from 2012 to 2022",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year)",
+      y = "volume") + 
+  scale_x_continuous(breaks = plot_df$year, labels = plot_df$year) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=10),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+ 
+### Volume by quarter
+    
+```{r}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  mutate(month=month(date)) %>%
+  mutate(quarter=case_when(
+    month <= 3 ~ 1,
+    month <= 6 ~ 2,
+    month <= 9 ~ 3,
+    .default = 4
+  )) %>%
+  group_by(year, quarter) %>%
+  summarise(mean_close = mean(close), mean_volume = mean(volume), .groups="drop") %>%
+  mutate(year_qt = paste0(year, "/0", quarter)) %>%
+  arrange(year, quarter) %>%
+  mutate(year_qt = factor(year_qt, levels=year_qt))
+
+plot_df$x = seq(1, nrow(plot_df))
+
+ggplot(data=plot_df, aes(x=x, y=mean_volume)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Daily Volume for Big Tech Companies", 
+       subtitle = "The mean daily volume for each quarter from 2012/03 to 2022/04",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "volume") + 
+  scale_x_continuous(breaks = seq(1, nrow(plot_df)), labels = plot_df$year_qt) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=10),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+# Historical Returns
+
+```{r}
+calculate_returns_year <- function(year_num, big_tech_stock_prices, big_tech_companies) {
+  curr_df = big_tech_stock_prices %>%
+    mutate(year=year(date)) %>%
+    filter(year == year_num)
+  
+  date_info = curr_df %>%
+    group_by(stock_symbol) %>%
+    summarise(min_date = min(date), max_date = max(date))
+  
+  start_price = date_info %>%
+    inner_join(curr_df, by=c("stock_symbol", "min_date"="date")) %>%
+    select(stock_symbol, close) %>%
+    rename(start_price=close)
+  
+  end_price = date_info %>%
+    inner_join(curr_df, by=c("stock_symbol", "max_date"="date")) %>%
+    select(stock_symbol, close) %>%
+    rename(end_price=close)
+  
+  year_num = as.character(year_num)
+  
+  result_df = inner_join(start_price, end_price, by=join_by("stock_symbol")) %>%
+    mutate(returns = (end_price / start_price) - 1) %>%
+    # mutate(returns = paste0(as.character(round(returns * 10000) / 100), '%')) %>%
+    select(stock_symbol, returns) %>%
+    rename(!!year_num := returns)
+  
+  return(result_df)
+}
+
+result_list = map(.x=seq(2015,2022), 
+                .f=~calculate_returns_year(.x, big_tech_stock_prices, big_tech_companies))
+
+result_df = result_list[[1]]
+for (i in 2:length(result_list)) {
+  result_df = inner_join(result_df, result_list[[i]], by=join_by(stock_symbol))
+}
+
+result_df = inner_join(result_df, big_tech_companies, by=join_by(stock_symbol)) %>%
+  rename(`Stock Symbol`=stock_symbol, Company=company) %>%
+  select(`Stock Symbol`, Company, `2022`, `2021`, `2020`, `2019`, `2018`, `2017`, `2016`, `2015`)
+
+formatPercentage(formatStyle(datatable(result_df, 
+                                       caption = "Annual Total Returns",
+                                       options=list(pageLength=20)), 
+                             c("2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015"), 
+                             color = styleInterval(c(0), c("red", "green"))),
+                 columns = c("2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015"),
+                 digits = 2)
+```
+
+# Stock Comparison
+
+```{r}
+ui <- fluidPage(
+  useShinyjs(),  # Initialize shinyjs
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("start_year", label = "Start Year",
+                  choices = seq(2012, 2022), selected = 2012),
+      
+      selectInput("end_year", label = "End Year",
+                  choices = seq(2012, 2022), selected = 2022),
+      
+      selectInput("company1", label = "Company 1",
+                  choices = big_tech_companies$company, selected = big_tech_companies$company[1]),
+      
+      selectInput("company2", label = "Company 2",
+                  choices = big_tech_companies$company, selected = big_tech_companies$company[2]),
+      
+      checkboxInput("is_fix_scale", label = "Fix plot scale", TRUE)
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel(
+          "Price",
+          plotOutput("plot1")
+        ),
+        tabPanel(
+          "Volume",
+          plotOutput("plot2")
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  observe({
+    # Show a warning modal if end year is less than start year
+    if (as.numeric(input$end_year) < as.numeric(input$start_year)) {
+      showModal(
+        modalDialog(
+          title = "Warning",
+          "End year must be greater than or equal to start year.",
+          easyClose = TRUE,
+          footer = tagList(
+            actionButton("okBtn", "OK", class = "btn-primary")
+          )
+        )
+      )
+    }
+  })
+  
+  observeEvent(input$okBtn, {
+    # Close the modal dialog when the "OK" button is clicked
+    removeModal()
+  })
+  
+  output$plot1 <- renderPlot({
+    stock_symbol1 = big_tech_companies[big_tech_companies$company==input$company1, "stock_symbol"]
+    stock_symbol2 = big_tech_companies[big_tech_companies$company==input$company2, "stock_symbol"]
+    start_year = as.numeric(input$start_year)
+    end_year = as.numeric(input$end_year)
+    
+    if (end_year < start_year) {
+      ggplot() +
+        guides(color = guide_legend(title = "Company")) +
+        labs(title = "Stock Market Close Price for Big Tech Companies", 
+             subtitle = "The mean stock market close price for each quarter",
+             caption = "Data Source: Big Tech Stock Prices from Kaggle",
+             x = "time (year/quarter)",
+             y = "price (dollars per share)") + 
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+              axis.title.x = element_text(size = 12),
+              axis.title.y = element_text(size = 12),
+              plot.title = element_text(size=14),
+              plot.subtitle = element_text(size=12),
+              plot.margin = margin(0,0,0,0, "cm"),
+              legend.text = element_text(size = 8),
+              legend.title = element_text(size = 10)
+        )
+    } else {
+    
+    plot_df = big_tech_stock_prices %>%
+      mutate(year=year(date)) %>%
+      filter(year >= start_year & year <= end_year) %>%
+      filter(stock_symbol %in% c(stock_symbol1, stock_symbol2)) %>%
+      mutate(month=month(date)) %>%
+      mutate(quarter=case_when(
+        month <= 3 ~ 1,
+        month <= 6 ~ 2,
+        month <= 9 ~ 3,
+        .default = 4
+      )) %>%
+      mutate(year_qt = paste0(year, "/0", quarter)) %>%
+      group_by(stock_symbol, year, quarter, year_qt) %>%
+      summarise(mean_close = mean(close), .groups="drop") %>%
+      inner_join(big_tech_companies, by=join_by("stock_symbol")) %>%
+      arrange(year, quarter)
+    
+    if (input$is_fix_scale) {
+      ggplot(data=plot_df, aes(x=year_qt, y=mean_close, group=company, color=company)) +
+      geom_line(linewidth=1) + 
+      geom_point()  +
+      guides(color = guide_legend(title = "Company")) +
+      labs(title = "Stock Market Close Price for Big Tech Companies", 
+           subtitle = "The mean stock market close price for each quarter",
+           caption = "Data Source: Big Tech Stock Prices from Kaggle",
+           x = "time (year/quarter)",
+           y = "price (dollars per share)") + 
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+            axis.title.x = element_text(size = 12),
+            axis.title.y = element_text(size = 12),
+            plot.title = element_text(size=14),
+            plot.subtitle = element_text(size=12),
+            plot.margin = margin(0,0,0,0, "cm"),
+            legend.text = element_text(size = 8),
+            legend.title = element_text(size = 10)
+      )
+    } else {
+      ggplot(data = plot_df, aes(x = year_qt, y = mean_close, color = company, group=1)) +
+        geom_line(linewidth = 1) +
+        geom_point() +
+        facet_wrap(~ company, scales = "free_y", ncol = 1) + 
+        guides(color = guide_legend(title = "Company")) +
+      labs(title = "Stock Market Close Price for Big Tech Companies", 
+           subtitle = "The mean stock market close price for each quarter",
+           caption = "Data Source: Big Tech Stock Prices from Kaggle",
+           x = "time (year/quarter)",
+           y = "price (dollars per share)") + 
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+            axis.title.x = element_text(size = 12),
+            axis.title.y = element_text(size = 12),
+            plot.title = element_text(size=14),
+            plot.subtitle = element_text(size=12),
+            plot.margin = margin(0,0,0,0, "cm"),
+            legend.text = element_text(size = 8),
+            legend.title = element_text(size = 10)
+      )
+    }
+  }
+    },
+  height = 600)
+  
+  output$plot2 <- renderPlot({
+    stock_symbol1 = big_tech_companies[big_tech_companies$company==input$company1, "stock_symbol"]
+    stock_symbol2 = big_tech_companies[big_tech_companies$company==input$company2, "stock_symbol"]
+    start_year = as.numeric(input$start_year)
+    end_year = as.numeric(input$end_year)
+    
+    if (end_year < start_year) {
+      ggplot() +
+        guides(color = guide_legend(title = "Company")) +
+        labs(title = "Stock Market Volume for Big Tech Companies", 
+             subtitle = "The mean daily volume for each quarter",
+             caption = "Data Source: Big Tech Stock Prices from Kaggle",
+             x = "time (year/quarter)",
+             y = "volume") + 
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+              axis.title.x = element_text(size = 12),
+              axis.title.y = element_text(size = 12),
+              plot.title = element_text(size=14),
+              plot.subtitle = element_text(size=12),
+              plot.margin = margin(0,0,0,0, "cm"),
+              legend.text = element_text(size = 8),
+              legend.title = element_text(size = 10)
+        )
+    } else {
+
+    plot_df = big_tech_stock_prices %>%
+      mutate(year=year(date)) %>%
+      filter(year >= start_year & year <= end_year) %>%
+      filter(stock_symbol %in% c(stock_symbol1, stock_symbol2)) %>%
+      mutate(month=month(date)) %>%
+      mutate(quarter=case_when(
+        month <= 3 ~ 1,
+        month <= 6 ~ 2,
+        month <= 9 ~ 3,
+        .default = 4
+      )) %>%
+      mutate(year_qt = paste0(year, "/0", quarter)) %>%
+      group_by(stock_symbol, year, quarter, year_qt) %>%
+      summarise(mean_volume = mean(volume), .groups="drop") %>%
+      inner_join(big_tech_companies, by=join_by("stock_symbol")) %>%
+      arrange(year, quarter)
+    
+    if (input$is_fix_scale) {
+      ggplot(data=plot_df, aes(x=year_qt, y=mean_volume, group=company, color=company)) +
+        geom_line(linewidth=1) + 
+        geom_point()  +
+        guides(color = guide_legend(title = "Company")) +
+        labs(title = "Stock Market Volume for Big Tech Companies", 
+             subtitle = "The mean daily volume for each quarter",
+             caption = "Data Source: Big Tech Stock Prices from Kaggle",
+             x = "time (year/quarter)",
+             y = "volume") + 
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+              axis.title.x = element_text(size = 12),
+              axis.title.y = element_text(size = 12),
+              plot.title = element_text(size=14),
+              plot.subtitle = element_text(size=12),
+              plot.margin = margin(0,0,0,0, "cm"),
+              legend.text = element_text(size = 8),
+              legend.title = element_text(size = 10)
+        )
+    } else {
+      ggplot(data = plot_df, aes(x = year_qt, y = mean_volume, color = company, group=1)) +
+        geom_line(linewidth = 1) +
+        geom_point() +
+        facet_wrap(~ company, scales = "free_y", ncol = 1) + 
+        labs(
+          title = "Stock Market Volume for Big Tech Companies",
+          subtitle = "The mean daily volume for each quarter",
+          caption = "Data Source: Big Tech Stock Prices from Kaggle",
+          x = "time (year/quarter)",
+          y = "volume"
+        ) +
+        theme_minimal() +
+        theme(
+          axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+          axis.title.x = element_text(size = 12),
+          axis.title.y = element_text(size = 12),
+          plot.title = element_text(size = 14),
+          plot.subtitle = element_text(size = 12),
+          plot.margin = margin(0, 0, 0, 0, "cm"),
+          legend.text = element_text(size = 8),
+          legend.title = element_text(size = 10)
+        )
+    }
+  }
+      },
+  height = 600)
+
+}
+
+shinyApp(ui, server)
+```
+
+
+# Moving Average
+
+```{r}
+ui <- fluidPage(
+  useShinyjs(),  # Initialize shinyjs
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("start_year", label = "Start Year",
+                  choices = seq(2012, 2022), selected = 2012),
+      selectInput("end_year", label = "End Year",
+                  choices = seq(2012, 2022), selected = 2022),
+      selectInput("company", label = "Company",
+                  choices = big_tech_companies$company, selected = big_tech_companies$company[1]),
+      numericInput("ma", "Moving Average", 30, min = 1, max = 180)
+    ),
+    mainPanel(
+        tabPanel(
+          "Price",
+          plotOutput("plot1")
+        )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  observe({
+    # Show a warning modal if end year is less than start year
+    if (as.numeric(input$end_year) < as.numeric(input$start_year)) {
+      showModal(
+        modalDialog(
+          title = "Warning",
+          "End year must be greater than or equal to start year.",
+          easyClose = TRUE,
+          footer = tagList(
+            actionButton("okBtn", "OK", class = "btn-primary")
+          )
+        )
+      )
+    }
+  })
+  
+  observeEvent(input$okBtn, {
+    # Close the modal dialog when the "OK" button is clicked
+    removeModal()
+  })
+  
+  output$plot1 <- renderPlot({
+    stock_symbol_input = big_tech_companies[big_tech_companies$company==input$company, "stock_symbol"]
+    start_year = as.numeric(input$start_year)
+    end_year = as.numeric(input$end_year)
+    ma = as.numeric(input$ma)
+    
+    if (end_year < start_year) {
+      ggplot() +
+        guides(color = guide_legend(title = "Company")) +
+        labs(title = "Stock Market Close Price", 
+             caption = "Data Source: Big Tech Stock Prices from Kaggle",
+             x = "time (year/quarter)",
+             y = "price (dollars per share)") + 
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6), 
+              axis.title.x = element_text(size = 12),
+              axis.title.y = element_text(size = 12),
+              plot.title = element_text(size=14),
+              plot.subtitle = element_text(size=12),
+              plot.margin = margin(0,0,0,0, "cm"),
+              legend.text = element_text(size = 8),
+              legend.title = element_text(size = 10)
+        )
+    } else {
+    
+      plot_df = big_tech_stock_prices %>%
+      filter(stock_symbol %in% c(stock_symbol_input)) %>%
+      mutate(day_mean=c(rep(NA, ma-1), rollmean(close, ma))) %>%
+      mutate(year=year(date),
+             quarter=quarter(date, type="quarter"),
+             year_qt = paste0(year, "/0", quarter)) %>%
+      filter(year(date) >= start_year & year(date) <= end_year) %>%
+      arrange(date) %>%
+      mutate(pseudo_x=seq(1, length(date)))
+
+    plot_coord_df = plot_df %>%
+      group_by(year_qt) %>%
+      summarise(x=min(pseudo_x))
+
+  ggplot(data=plot_df) +
+    geom_line(aes(x=pseudo_x, y=close, colour="stock"), linewidth=0.7) +
+    geom_line(aes(x=pseudo_x, y=day_mean, 
+                  colour=paste0(ma, "-day moving average")), linewidth=0.7) +
+      scale_x_continuous(breaks=plot_coord_df$x, labels=plot_coord_df$year_qt) +
+      guides(color = guide_legend(title = "")) +
+  labs(title = "Stock Market Close Price",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "price (dollars per share)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=12),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+  }
+    },
+  height = 600)
+
+}
+
+shinyApp(ui, server)
+```
+
+# Analysis
+
+Column
+-----------------------------------------------------------------------
+
+The stock price for big tech companies was steadily increasing over the past decade and reached a peak at the beginning of 2022. However, in the same year, the price experienced a sudden drop, surprising many investors.
+
+This analysis intends to explore if there are any indicators that can reflect the trend of the changing price.
+
+```{r, fig.height=4, fig.width=10}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  mutate(month=month(date)) %>%
+  mutate(quarter=case_when(
+    month <= 3 ~ 1,
+    month <= 6 ~ 2,
+    month <= 9 ~ 3,
+    .default = 4
+  )) %>%
+  group_by(stock_symbol, year, quarter) %>%
+  summarise(mean_close = mean(close), .groups="drop") %>%
+  mutate(year_qt = paste0(year, "/0", quarter)) %>%
+  arrange(stock_symbol, year_qt) %>%
+  inner_join(big_tech_companies, by="stock_symbol")
+
+ggplot(data=plot_df) +
+  geom_line(aes(x=year_qt, y=mean_close, group=company, color=company)) +
+  guides(color = guide_legend(title = "Company")) +
+  labs(title = "Stock Market Close Price for Big Tech Companies", 
+       subtitle = "The mean stock market close price for each quarter from 2012/03 to 2022/04",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "price (dollars per share)") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=12),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+By comparing the changes in price and the number of shares traded, we can see that the stock trading volume reflects the market sentiment to some extent. A high volume usually indicates that the investors all expect the price to continue the current trend, whereas a low volume may indicate that the market is going against investors' expectation. For example, the volume increases in year 2019 and 2020, a time when the market expected the stock price to go up. The following high peak and the sudden drop were out of expectation, which corresponded to a drop in the market volume.
+
+```{r, fig.height=4, fig.width=10}
+plot_df = big_tech_stock_prices %>%
+  mutate(year=year(date)) %>%
+  mutate(month=month(date)) %>%
+  mutate(quarter=case_when(
+    month <= 3 ~ 1,
+    month <= 6 ~ 2,
+    month <= 9 ~ 3,
+    .default = 4
+  )) %>%
+  group_by(year, quarter) %>%
+  summarise(mean_close = mean(close), mean_volume = mean(volume), .groups="drop") %>%
+  mutate(year_qt = paste0(year, "/0", quarter)) %>%
+  arrange(year, quarter) %>%
+  mutate(year_qt = factor(year_qt, levels=year_qt))
+
+plot_df$x = seq(1, nrow(plot_df))
+
+ggplot(data=plot_df, aes(x=x, y=mean_volume)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Daily Volume for Big Tech Companies", 
+       subtitle = "The mean daily volume for each quarter from 2012/03 to 2022/04",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "volume") + 
+  scale_x_continuous(breaks = seq(1, nrow(plot_df)), labels = plot_df$year_qt) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=10),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+An N-day moving average is the average market close price over the previous N days. It exhibits a lag with the most recent market price. For example, after a drop period, the 120-day moving average can increase only after the stock market has been increasing for a while. As N increases, the moving average becomes more flat and reflects more of the long time trend. Thus, the combination of short-days or long-days moving averages may reflect the overall trend of price increases or decreases. 
+
+The stock price for Adobe from 2020 to 2022 with different moving averages are shown below. The period is chosen because it is the two years with the largest amount of price changes. From the two plots, we can see that when the stock price increases and passes the moving average, it usually continues increasing. On the other hand, when the stock prices decreases and passes the moving average, it usually continues decreasing. In both cases, passing the moving average indicates that the market has a strong momentum of moving under the current trend. Moreover, short-day moving averages is more favorable to reflect short-term price changes, whereas long-day moving averages can better reflect the long-term price trend.
+
+```{r, fig.height=4, fig.width=10}
+plot_df = big_tech_stock_prices %>%
+  filter(stock_symbol=="ADBE") %>%
+  mutate(day5_mean=c(rep(NA, 4), rollmean(close, 5)),
+         day10_mean=c(rep(NA, 9), rollmean(close, 10)),
+         day30_mean=c(rep(NA, 29), rollmean(close, 30)),
+         day60_mean=c(rep(NA, 59), rollmean(close, 60)),
+         day120_mean=c(rep(NA, 119), rollmean(close, 120))) %>%
+  mutate(year=year(date),
+         quarter=quarter(date, type="quarter"),
+         year_qt = paste0(year, "/0", quarter)) %>%
+  filter(year(date) >= 2020) %>%
+  mutate(pseudo_x=seq(1, length(date)))
+
+plot_coord_df = plot_df %>%
+  group_by(year_qt) %>%
+  summarise(x=min(pseudo_x))
+
+dayN_mean_short = plot_df %>%
+  select(pseudo_x, day5_mean, day10_mean, day30_mean) %>%
+  pivot_longer(-pseudo_x, names_to = "type", values_to = "value") %>%
+  mutate(type = factor(type, 
+                       levels = c("day5_mean", "day10_mean", "day30_mean", "day60_mean", "day120_mean"),
+                       ordered = TRUE))
+
+dayN_mean_long = plot_df %>%
+  select(pseudo_x, day30_mean, day60_mean, day120_mean) %>%
+  pivot_longer(-pseudo_x, names_to = "type", values_to = "value") %>%
+  mutate(type = factor(type, 
+                       levels = c("day5_mean", "day10_mean", "day30_mean", "day60_mean", "day120_mean"),
+                       ordered = TRUE))
+
+colors_vec = hue_pal()(5)
+ggplot() + 
+  geom_line(data=plot_df, aes(x=pseudo_x, y=close, colour="true_line"), linewidth=0.7) +
+  geom_line(data=dayN_mean_short, aes(x=pseudo_x, y=value, group=type, color=type), linewidth=0.7) +
+  scale_x_continuous(breaks=plot_coord_df$x, labels=plot_coord_df$year_qt) +
+  scale_color_manual(name="Price",
+                     values = c("day5_mean" = colors_vec[1], 
+                                "day10_mean" = colors_vec[2], 
+                                "day30_mean" = colors_vec[3],
+                                "true_line" = "black"),
+                     labels=c("day5_mean" = "5-day moving average", 
+                              "day10_mean" = "10-day moving average", 
+                              "day30_mean" = "30-day moving average", 
+                              "true_line" = "daily close price")) +
+  labs(title = "Stock Market Close Price for Adobe (1)", 
+       subtitle = "The stock market close price of Adobe since 2022/01",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "price (dollars per share)") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=12),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+
+```
+
+
+```{r, fig.height=4, fig.width=10}
+ggplot() + 
+  geom_line(data=plot_df, aes(x=pseudo_x, y=close, colour="true_line"), linewidth=0.7) +
+  geom_line(data=dayN_mean_long, aes(x=pseudo_x, y=value, group=type, color=type), linewidth=0.7) +
+  scale_x_continuous(breaks=plot_coord_df$x, labels=plot_coord_df$year_qt) +
+  scale_color_manual(name="Price",
+                     values = c("day30_mean" = colors_vec[3], 
+                                "day60_mean" = colors_vec[4], 
+                                "day120_mean" = colors_vec[5],
+                                "true_line" = "black"),
+                     labels=c("day30_mean" = "30-day moving average", 
+                              "day60_mean" = "60-day moving average", 
+                              "day120_mean" = "120-day moving average", 
+                              "true_line" = "daily close price")) +
+  labs(title = "Stock Market Close Price for Adobe (2)", 
+       subtitle = "The stock market close price of Adobe since 2022/01",
+       caption = "Data Source: Big Tech Stock Prices from Kaggle",
+      x = "time (year/quarter)",
+      y = "price (dollars per share)") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1, size=6), 
+        axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12),
+        plot.title = element_text(size=14),
+        plot.subtitle = element_text(size=12),
+        plot.margin = margin(0,0,0,0, "cm"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10))
+```
+
+In summary, stock market is complicated, and the stock price can be influenced by many intertwined factors. Despite its complexity, indicators such as the stock market volume and the moving averages can to some extent reflect the current trend of the market. 
+
